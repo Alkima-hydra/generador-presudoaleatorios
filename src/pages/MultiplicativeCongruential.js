@@ -107,10 +107,14 @@ const MultiplicativeCongruential = () => {
     // Generación de la secuencia
     let currentSeed = seedNum;
     const generatedResults = [];
-    const seenNumbers = new Map(); // Cambiado a Map para guardar la posición de la primera aparición
-    const seenRandoms = new Map();
+    const seenSeeds = new Map(); // Para detectar ciclos en las semillas
+    const seenRandoms = new Map(); // Para detectar repeticiones en los aleatorios
     let actualPeriod = 0;
     let cycleStartIndex = -1;
+    let hasCycle = false;
+
+    // Agregar la semilla inicial al mapa
+    seenSeeds.set(seedNum, 0);
 
     for (let i = 0; i < countNum; i++) {
       // Aplicar el algoritmo congruencial multiplicativo: X_(n+1) = (a * X_n) mod m
@@ -120,22 +124,10 @@ const MultiplicativeCongruential = () => {
       const randomNumber = nextSeed / modulusNum;
       const randomFixed = randomNumber.toFixed(4);
 
-      // Verificar si la nueva semilla ya ha sido vista (ciclo detectado)
-      if (seenNumbers.has(nextSeed)) {
-        // Si encontramos un ciclo y no hemos registrado uno antes
-        if (cycleStartIndex === -1) {
-          cycleStartIndex = seenNumbers.get(nextSeed);
-          actualPeriod = i - cycleStartIndex;
-          setIsDegenerative(true);
-        }
-      }
+      // Registrar el número aleatorio para detectar repeticiones
+      seenRandoms.set(randomFixed, (seenRandoms.get(randomFixed) || 0) + 1);
 
-      // Registrar la semilla y su posición
-      if (!seenNumbers.has(nextSeed)) {
-        seenNumbers.set(nextSeed, i);
-      }
-
-      // Guardar el resultado
+      // Guardar el resultado actual
       generatedResults.push({
         iteration: i + 1,
         seed: currentSeed,
@@ -144,31 +136,78 @@ const MultiplicativeCongruential = () => {
         randomFixed: randomFixed,
       });
 
+      // Verificar si la siguiente semilla ya ha sido vista (ciclo detectado)
+      if (seenSeeds.has(nextSeed)) {
+        hasCycle = true;
+        cycleStartIndex = seenSeeds.get(nextSeed);
+        actualPeriod = i + 1 - cycleStartIndex;
+        break; // Terminar la generación al detectar un ciclo completo
+      }
+
+      // Registrar la siguiente semilla y su posición
+      seenSeeds.set(nextSeed, i + 1);
+      
       // Actualizar la semilla para la próxima iteración
       currentSeed = nextSeed;
-      
-      // Registrar el número aleatorio para detectar repeticiones
-      seenRandoms.set(randomFixed, (seenRandoms.get(randomFixed) || 0) + 1);
     }
 
-    // Si continuamos hasta el final sin encontrar un ciclo, la secuencia no es degenerativa
-    // dentro del rango solicitado
-    setPeriod(actualPeriod > 0 ? actualPeriod : 0);
+    // Si se encontró un ciclo o si la secuencia termina en 0, es degenerativa
+    setIsDegenerative(hasCycle || currentSeed === 0);
+    setPeriod(actualPeriod);
 
-    // Actualizar los resultados con información de repeticiones
+    // Si la secuencia no completó todas las iteraciones solicitadas debido
+    // a que se encontró un ciclo, completar los resultados
+    if (hasCycle && generatedResults.length < countNum) {
+      const cycleLength = actualPeriod;
+      const remainingIterations = countNum - generatedResults.length;
+      
+      // Generar las iteraciones restantes basadas en el ciclo detectado
+      for (let i = 0; i < remainingIterations; i++) {
+        const cyclePosition = (i % cycleLength) + cycleStartIndex;
+        const cycleItem = generatedResults[cyclePosition];
+        
+        // Calcular la siguiente semilla basada en la actual
+        const currentSeed = cycleItem.nextSeed;
+        const nextSeed = (multiplierNum * currentSeed) % modulusNum;
+        const randomNumber = nextSeed / modulusNum;
+        const randomFixed = randomNumber.toFixed(4);
+        
+        generatedResults.push({
+          iteration: generatedResults.length + 1,
+          seed: currentSeed,
+          nextSeed: nextSeed,
+          random: randomNumber,
+          randomFixed: randomFixed,
+          isCyclePredicted: true // Marca esta iteración como parte de un ciclo predicho
+        });
+      }
+    }
+
+    // Marcar en los resultados cuáles forman parte del ciclo
     const finalResults = generatedResults.map((result, index) => {
+      const isPartOfCycle = hasCycle && index >= cycleStartIndex;
+      const isCycleStart = index === cycleStartIndex;
       const randomRepeated = seenRandoms.get(result.randomFixed) > 1;
-      const isPartOfCycle = cycleStartIndex !== -1 && index >= cycleStartIndex;
 
       return {
         ...result,
-        randomRepeated,
         isPartOfCycle,
-        isCycleStart: index === cycleStartIndex
+        isCycleStart,
+        randomRepeated
       };
     });
 
     setResults(finalResults);
+
+    // Si la secuencia termina en 0 y no se detectó un ciclo,
+    // mostrar advertencia de degeneración total
+    if (currentSeed === 0 && !hasCycle) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Secuencia Degenerativa',
+        text: 'La secuencia ha degenerado completamente a 0. No generará más valores aleatorios únicos.',
+      });
+    }
   };
 
   const calculateMaxPeriod = () => {
@@ -299,25 +338,6 @@ const MultiplicativeCongruential = () => {
     XLSX.writeFile(wb, 'numeros_congruencial_multiplicativo.xlsx');
   };
 
-  // Función para generar el estilo de fila con alta prioridad
-  const getRowStyle = (result) => {
-    // Crear un objeto de estilo con !important para las propiedades principales
-    const style = {};
-    
-    if (result.isPartOfCycle) {
-      style.backgroundColor = STYLES.rowCycle;
-    } else if (result.randomRepeated) {
-      style.backgroundColor = STYLES.rowRepeated;
-    }
-    
-    if (result.isCycleStart) {
-      style.borderTop = '2px solid #e67e22 !important';
-      style.fontWeight = 'bold !important';
-    }
-    
-    return style;
-  };
-
   // CSS personalizado para aplicar directamente al componente
   const customStyles = `
     .cycle-row {
@@ -330,11 +350,17 @@ const MultiplicativeCongruential = () => {
       border-top: 2px solid #e67e22 !important;
       font-weight: bold !important;
     }
+    .cycle-predicted {
+      background-color: #ffeeba !important;
+      font-style: italic;
+    }
     /* Esta regla asegura que las celdas no pierdan el color por efecto de striped */
     .table-striped>tbody>tr.cycle-row:nth-of-type(odd),
     .table-striped>tbody>tr.cycle-row:nth-of-type(even),
     .table-striped>tbody>tr.repeated-row:nth-of-type(odd),
-    .table-striped>tbody>tr.repeated-row:nth-of-type(even) {
+    .table-striped>tbody>tr.repeated-row:nth-of-type(even),
+    .table-striped>tbody>tr.cycle-predicted:nth-of-type(odd),
+    .table-striped>tbody>tr.cycle-predicted:nth-of-type(even) {
       --bs-table-accent-bg: transparent !important;
     }
   `;
@@ -443,10 +469,12 @@ const MultiplicativeCongruential = () => {
                 </thead>
                 <tbody>
                   {results.map((result, index) => {
-                    // Determinar las clases CSS en lugar de estilos inline
+                    // Determinar las clases CSS
                     let rowClasses = '';
                     
-                    if (result.isPartOfCycle) {
+                    if (result.isCyclePredicted) {
+                      rowClasses += ' cycle-predicted';
+                    } else if (result.isPartOfCycle) {
                       rowClasses += ' cycle-row';
                     } else if (result.randomRepeated) {
                       rowClasses += ' repeated-row';
@@ -478,7 +506,7 @@ const MultiplicativeCongruential = () => {
                 
                 <div className={`alert ${isDegenerative ? 'alert-warning' : 'alert-success'} text-center`}>
                   {isDegenerative
-                    ? `La secuencia es degenerativa. Se detectó un ciclo con período ${period}.`
+                    ? `La secuencia es degenerativa. ${period > 0 ? `Se detectó un ciclo con período ${period}.` : 'La secuencia termina en 0.'}`
                     : 'La secuencia no muestra degeneración en las iteraciones realizadas.'}
                 </div>
                 
@@ -486,7 +514,7 @@ const MultiplicativeCongruential = () => {
                   <p>
                     <strong>Leyenda:</strong>
                   </p>
-                  <div className="d-flex justify-content-center gap-3">
+                  <div className="d-flex justify-content-center gap-3 flex-wrap">
                     <div>
                       <span className="badge" style={{ backgroundColor: STYLES.badgeWarning, color: 'black' }}>⬤</span>
                       <span className="ms-1">Número que forma parte del ciclo</span>
@@ -495,6 +523,12 @@ const MultiplicativeCongruential = () => {
                       <span className="badge" style={{ backgroundColor: STYLES.badgeInfo, color: 'white' }}>⬤</span>
                       <span className="ms-1">Número aleatorio repetido</span>
                     </div>
+                    {isDegenerative && period > 0 && (
+                      <div>
+                        <span className="badge" style={{ backgroundColor: '#ffeeba', color: 'black' }}>⬤</span>
+                        <span className="ms-1">Valor predicho basado en ciclo detectado</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </Col>

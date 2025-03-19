@@ -9,10 +9,10 @@ import imagen4 from '../assets/images/imagen4.jpeg';
 
 const Home = () => {
   const cards = [
-    { image: imagen1, text: 'Algoritmo de los Cuadrados Medios' },
-    { image: imagen2, text: 'Algoritmo de los Productos Medios' },
-    { image: imagen3, text: 'Algoritmo Congruencial Lineal' },
-    { image: imagen4, text: 'Algoritmo Congurencial Multiplicativo' }
+    { image: imagen1, text: 'Algoritmo de los Cuadrados Medios', path: '/squares-middle' },
+    { image: imagen2, text: 'Algoritmo de los Productos Medios', path: '/middle-products' },
+    { image: imagen3, text: 'Algoritmo Congruencial Lineal', path: '/linear-congruential' },
+    { image: imagen4, text: 'Algoritmo Congurencial Multiplicativo', path: '/multiplicative-congruential' }
   ];
 
   return (
@@ -25,7 +25,7 @@ const Home = () => {
         <Row>
           {cards.map((card, index) => (
             <Col md={3} key={index} className="mb-4">
-              <CardComponent image={card.image} text={card.text} />
+              <CardComponent image={card.image} text={card.text} path={card.path} />
             </Col>
           ))}
         </Row>
