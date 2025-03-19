@@ -1,0 +1,76 @@
+@import 'variables';
+@import '~bootstrap/scss/bootstrap';
+
+.navbar {
+  background-color: $primary;
+  padding: 1rem;
+}
+
+.nav-link {
+  color: $secondary !important;
+  transition: $transition;
+  
+  &:hover {
+    color: $accent !important;
+  }
+  
+  &.active {
+    color: $accent !important;
+    font-weight: bold;
+  }
+}
+
+.card {
+  background: $card-bg;
+  border: none;
+  border-radius: 8px;
+  transition: $transition;
+  
+  &:hover {
+    transform: translateY(-5px);
+    box-shadow: $shadow;
+  }
+  
+  img {
+    border-radius: 8px 8px 0 0;
+    height: 200px;
+    object-fit: cover;
+  }
+  
+  .card-body {
+    padding: 1rem;
+    text-align: center;
+    color: $primary;
+  }
+}
+
+.btn-primary {
+  background-color: $accent;
+  border-color: $accent;
+  transition: $transition;
+  
+  &:hover {
+    background-color: darken($accent, 10%);
+    border-color: darken($accent, 10%);
+  }
+}
+
+.btn-outline-primary {
+  color: $accent;
+  border-color: $accent;
+  transition: $transition;
+  
+  &:hover {
+    background-color: $accent;
+    color: $secondary;
+  }
+}
+
+.form-control {
+  border-color: $primary;
+  &:focus {
+    border-color: $accent;
+    box-shadow: 0 0 0 0.2rem rgba($accent, 0.25);
+  }
+}
+
