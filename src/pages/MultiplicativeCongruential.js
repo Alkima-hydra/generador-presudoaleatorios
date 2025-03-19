@@ -13,10 +13,6 @@ const isPowerOf2 = (n) => {
 
 // Función mejorada para calcular el período máximo teórico
 const getMaxPeriod = (modulus, multiplier, seed) => {
-  // Para m = 2^k, el período máximo es 2^(k-2) = m/4 cuando:
-  // 1. m es potencia de 2
-  // 2. a = 8t ± 3 (para algún t)
-  // 3. X₀ es impar
   if (isPowerOf2(modulus)) {
     const isMultiplierValid = (multiplier % 8 === 3 || multiplier % 8 === 5);
     const isSeedOdd = seed % 2 === 1;
@@ -24,12 +20,10 @@ const getMaxPeriod = (modulus, multiplier, seed) => {
     if (isMultiplierValid && isSeedOdd) {
       return modulus / 4;
     } else {
-      // Si no cumple las condiciones, el período puede ser menor
-      return Math.floor(modulus / 4);  // Estimación conservadora
+      return Math.floor(modulus / 4); // Estimación conservadora
     }
   } else {
-    // Para otros casos, el período máximo es menor
-    return Math.floor(modulus / 4);  // Estimación conservadora
+    return Math.floor(modulus / 4); // Estimación conservadora
   }
 };
 
@@ -41,16 +35,7 @@ const MultiplicativeCongruential = () => {
   const [results, setResults] = useState([]);
   const [isDegenerative, setIsDegenerative] = useState(false);
   const [period, setPeriod] = useState(0);
-  
-  // Definir estilos de colores como constantes con mayor especificidad
-  const STYLES = {
-    tableBgNormal: '#ecf0f1',
-    tableBgDegenerative: '#f8f9fa',
-    rowCycle: '#fff3cd !important',       // Amarillo claro con !important
-    rowRepeated: '#e8f4f8 !important',    // Azul claro con !important
-    badgeWarning: '#ffc107',   // Amarillo
-    badgeInfo: '#17a2b8'       // Azul
-  };
+  const [hasCycles, setHasCycles] = useState(false); // Estado para ciclos
 
   const generateMultiplicativeCongruential = () => {
     const seedNum = parseInt(seed);
@@ -117,56 +102,44 @@ const MultiplicativeCongruential = () => {
     seenSeeds.set(seedNum, 0);
 
     for (let i = 0; i < countNum; i++) {
-      // Aplicar el algoritmo congruencial multiplicativo: X_(n+1) = (a * X_n) mod m
       const nextSeed = (multiplierNum * currentSeed) % modulusNum;
-      
-      // Calcular el número aleatorio en el rango [0,1)
       const randomNumber = nextSeed / modulusNum;
       const randomFixed = randomNumber.toFixed(4);
 
-      // Registrar el número aleatorio para detectar repeticiones
       seenRandoms.set(randomFixed, (seenRandoms.get(randomFixed) || 0) + 1);
 
-      // Guardar el resultado actual
       generatedResults.push({
         iteration: i + 1,
         seed: currentSeed,
         nextSeed: nextSeed,
         random: randomNumber,
         randomFixed: randomFixed,
+        index: i // Guardar índice para detección de ciclos
       });
 
-      // Verificar si la siguiente semilla ya ha sido vista (ciclo detectado)
       if (seenSeeds.has(nextSeed)) {
         hasCycle = true;
         cycleStartIndex = seenSeeds.get(nextSeed);
         actualPeriod = i + 1 - cycleStartIndex;
-        break; // Terminar la generación al detectar un ciclo completo
+        break;
       }
 
-      // Registrar la siguiente semilla y su posición
       seenSeeds.set(nextSeed, i + 1);
-      
-      // Actualizar la semilla para la próxima iteración
       currentSeed = nextSeed;
     }
 
-    // Si se encontró un ciclo o si la secuencia termina en 0, es degenerativa
     setIsDegenerative(hasCycle || currentSeed === 0);
     setPeriod(actualPeriod);
+    setHasCycles(hasCycle); // Actualizar estado de ciclos
 
-    // Si la secuencia no completó todas las iteraciones solicitadas debido
-    // a que se encontró un ciclo, completar los resultados
     if (hasCycle && generatedResults.length < countNum) {
       const cycleLength = actualPeriod;
       const remainingIterations = countNum - generatedResults.length;
-      
-      // Generar las iteraciones restantes basadas en el ciclo detectado
+
       for (let i = 0; i < remainingIterations; i++) {
         const cyclePosition = (i % cycleLength) + cycleStartIndex;
         const cycleItem = generatedResults[cyclePosition];
         
-        // Calcular la siguiente semilla basada en la actual
         const currentSeed = cycleItem.nextSeed;
         const nextSeed = (multiplierNum * currentSeed) % modulusNum;
         const randomNumber = nextSeed / modulusNum;
@@ -178,29 +151,29 @@ const MultiplicativeCongruential = () => {
           nextSeed: nextSeed,
           random: randomNumber,
           randomFixed: randomFixed,
-          isCyclePredicted: true // Marca esta iteración como parte de un ciclo predicho
+          isCyclePredicted: true
         });
       }
     }
 
-    // Marcar en los resultados cuáles forman parte del ciclo
+    // Marcar inicio y fin del primer ciclo
     const finalResults = generatedResults.map((result, index) => {
       const isPartOfCycle = hasCycle && index >= cycleStartIndex;
       const isCycleStart = index === cycleStartIndex;
+      const isCycleEnd = hasCycle && index === cycleStartIndex + actualPeriod - 1;
       const randomRepeated = seenRandoms.get(result.randomFixed) > 1;
 
       return {
         ...result,
         isPartOfCycle,
         isCycleStart,
+        isCycleEnd,
         randomRepeated
       };
     });
 
     setResults(finalResults);
 
-    // Si la secuencia termina en 0 y no se detectó un ciclo,
-    // mostrar advertencia de degeneración total
     if (currentSeed === 0 && !hasCycle) {
       Swal.fire({
         icon: 'warning',
@@ -215,7 +188,6 @@ const MultiplicativeCongruential = () => {
     const multiplierNum = parseInt(multiplier);
     const modulusNum = parseInt(modulus);
 
-    // Validaciones
     if (isNaN(seedNum) || seedNum <= 0) {
       Swal.fire({
         icon: 'error',
@@ -243,15 +215,11 @@ const MultiplicativeCongruential = () => {
       return;
     }
 
-    // Condiciones específicas para período máximo cuando m es potencia de 2
     const isModulusPowerOf2 = isPowerOf2(modulusNum);
     const isMultiplierValid = (multiplierNum % 8 === 3 || multiplierNum % 8 === 5);
     const isSeedOdd = seedNum % 2 === 1;
-    
-    // Calcular el período máximo teórico
     const maxPeriod = getMaxPeriod(modulusNum, multiplierNum, seedNum);
 
-    // Verificar si los parámetros actuales son óptimos
     if (isModulusPowerOf2 && isMultiplierValid && isSeedOdd) {
       Swal.fire({
         icon: 'info',
@@ -261,25 +229,19 @@ const MultiplicativeCongruential = () => {
       return;
     }
 
-    // Sugerir mejores parámetros
     let suggestedSeed = seedNum;
     let suggestedMultiplier = multiplierNum;
     let suggestedModulus = modulusNum;
 
-    // Hacer la semilla impar si no lo es
     if (!isSeedOdd) {
       suggestedSeed = seedNum % 2 === 0 ? seedNum + 1 : seedNum;
     }
 
-    // Ajustar el multiplicador para que sea de la forma 8k ± 3
     if (!isMultiplierValid) {
-      // Encontrar el multiplicador válido más cercano
       const k = Math.floor(multiplierNum / 8);
       const candidate1 = 8 * k + 3;
       const candidate2 = 8 * k + 5;
       const candidate3 = 8 * (k + 1) + 3;
-      
-      // Seleccionar el más cercano al valor actual
       const distances = [
         Math.abs(candidate1 - multiplierNum),
         Math.abs(candidate2 - multiplierNum),
@@ -292,9 +254,7 @@ const MultiplicativeCongruential = () => {
       else suggestedMultiplier = candidate3;
     }
 
-    // Ajustar el módulo para que sea potencia de 2 si no lo es
     if (!isModulusPowerOf2) {
-      // Encontrar la potencia de 2 más cercana y mayor que el módulo actual
       let powerOf2 = 2;
       while (powerOf2 < modulusNum) {
         powerOf2 *= 2;
@@ -338,37 +298,9 @@ const MultiplicativeCongruential = () => {
     XLSX.writeFile(wb, 'numeros_congruencial_multiplicativo.xlsx');
   };
 
-  // CSS personalizado para aplicar directamente al componente
-  const customStyles = `
-    .cycle-row {
-      background-color: #fff3cd !important;
-    }
-    .repeated-row {
-      background-color: #e8f4f8 !important;
-    }
-    .cycle-start {
-      border-top: 2px solid #e67e22 !important;
-      font-weight: bold !important;
-    }
-    .cycle-predicted {
-      background-color: #ffeeba !important;
-      font-style: italic;
-    }
-    /* Esta regla asegura que las celdas no pierdan el color por efecto de striped */
-    .table-striped>tbody>tr.cycle-row:nth-of-type(odd),
-    .table-striped>tbody>tr.cycle-row:nth-of-type(even),
-    .table-striped>tbody>tr.repeated-row:nth-of-type(odd),
-    .table-striped>tbody>tr.repeated-row:nth-of-type(even),
-    .table-striped>tbody>tr.cycle-predicted:nth-of-type(odd),
-    .table-striped>tbody>tr.cycle-predicted:nth-of-type(even) {
-      --bs-table-accent-bg: transparent !important;
-    }
-  `;
-
   return (
     <>
       <Navbar />
-      <style>{customStyles}</style>
       <Container className="py-5">
         <h2 className="text-center mb-4" style={{ color: '#2c3e50' }}>
           Algoritmo Congruencial Multiplicativo
@@ -457,7 +389,7 @@ const MultiplicativeCongruential = () => {
                 bordered
                 hover
                 className="mt-4"
-                style={{ backgroundColor: STYLES.tableBgNormal }}
+                style={{ backgroundColor: '#ecf0f1' }}
               >
                 <thead>
                   <tr>
@@ -468,31 +400,36 @@ const MultiplicativeCongruential = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {results.map((result, index) => {
-                    // Determinar las clases CSS
-                    let rowClasses = '';
-                    
-                    if (result.isCyclePredicted) {
-                      rowClasses += ' cycle-predicted';
-                    } else if (result.isPartOfCycle) {
-                      rowClasses += ' cycle-row';
-                    } else if (result.randomRepeated) {
-                      rowClasses += ' repeated-row';
-                    }
-                    
-                    if (result.isCycleStart) {
-                      rowClasses += ' cycle-start';
-                    }
-                    
-                    return (
-                      <tr key={index} className={rowClasses}>
-                        <td>{result.iteration}</td>
-                        <td>{result.seed}</td>
-                        <td>{result.nextSeed}</td>
-                        <td>{result.randomFixed}</td>
-                      </tr>
-                    );
-                  })}
+                  {results.map((result, index) => (
+                    <tr
+                      key={index}
+                      className={result.randomRepeated ? 'repeated-row' : ''}
+                      style={result.randomRepeated ? { backgroundColor: '#e8f4f8' } : {}}
+                    >
+                      <td>{result.iteration}</td>
+                      <td>{result.seed}</td>
+                      <td>
+                        {result.isCycleStart || result.isCycleEnd ? (
+                          <span
+                            style={{
+                              fontWeight: 'bold',
+                              backgroundColor: '#d4f1f9',
+                              padding: '2px 5px',
+                              borderRadius: '3px',
+                              display: 'inline-block'
+                            }}
+                          >
+                            {result.nextSeed}
+                          </span>
+                        ) : (
+                          result.nextSeed
+                        )}
+                      </td>
+                      <td style={result.randomRepeated ? { backgroundColor: '#fff3cd' } : {}}>
+                        {result.randomFixed}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </Table>
             </div>
@@ -504,33 +441,21 @@ const MultiplicativeCongruential = () => {
                   <strong>Período Actual:</strong> {period > 0 ? period : 'No detectado en las iteraciones realizadas'}
                 </div>
                 
+                <p className="text-center mt-3" style={{ color: hasCycles ? '#3498db' : '#2c3e50' }}>
+                  {hasCycles
+                    ? 'Se detectó un ciclo en la secuencia. Los valores en fondo celeste y negrita marcan el inicio y fin del ciclo.'
+                    : 'No se detectaron ciclos en la secuencia.'}
+                </p>
+
                 <div className={`alert ${isDegenerative ? 'alert-warning' : 'alert-success'} text-center`}>
                   {isDegenerative
                     ? `La secuencia es degenerativa. ${period > 0 ? `Se detectó un ciclo con período ${period}.` : 'La secuencia termina en 0.'}`
                     : 'La secuencia no muestra degeneración en las iteraciones realizadas.'}
                 </div>
-                
-                <div className="alert alert-secondary text-center">
-                  <p>
-                    <strong>Leyenda:</strong>
-                  </p>
-                  <div className="d-flex justify-content-center gap-3 flex-wrap">
-                    <div>
-                      <span className="badge" style={{ backgroundColor: STYLES.badgeWarning, color: 'black' }}>⬤</span>
-                      <span className="ms-1">Número que forma parte del ciclo</span>
-                    </div>
-                    <div>
-                      <span className="badge" style={{ backgroundColor: STYLES.badgeInfo, color: 'white' }}>⬤</span>
-                      <span className="ms-1">Número aleatorio repetido</span>
-                    </div>
-                    {isDegenerative && period > 0 && (
-                      <div>
-                        <span className="badge" style={{ backgroundColor: '#ffeeba', color: 'black' }}>⬤</span>
-                        <span className="ms-1">Valor predicho basado en ciclo detectado</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+
+                <p className="text-center mt-3" style={{ color: '#e74c3c' }}>
+                  Las casillas con fondo amarillo en la columna "Número Aleatorio" indican valores que se repiten en la secuencia.
+                </p>
               </Col>
             </Row>
 

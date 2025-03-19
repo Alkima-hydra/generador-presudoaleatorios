@@ -11,6 +11,7 @@ const SquaresMiddle = () => {
   const [count, setCount] = useState('');
   const [results, setResults] = useState([]);
   const [isDegenerative, setIsDegenerative] = useState(false);
+  const [hasCycles, setHasCycles] = useState(false);
 
   const generateSquaresMiddle = () => {
     // Validaciones
@@ -43,9 +44,13 @@ const SquaresMiddle = () => {
     let currentSeed = seedNum;
     const generatedResults = [];
     const seenNumbers = new Map(); // Map para contar ocurrencias de semillas
+    const seedPositions = new Map(); // Map para guardar la primera posición de cada semilla
     const seenRandoms = new Map(); // Map para contar ocurrencias de números random por valor exacto
     let degenerative = false;
-
+    
+    // Variables para detectar el primer ciclo
+    let firstCycle = null;
+    
     // Generar todos los números solicitados
     for (let i = 0; i < countNum; i++) {
       const squared = currentSeed * currentSeed;
@@ -76,7 +81,22 @@ const SquaresMiddle = () => {
         nextSeed: nextNumber,
         random: randomNumber,
         randomFixed: randomFixed,
+        index: i  // Guardar el índice para facilitar la detección de ciclos
       });
+
+      // Detectar primer ciclo
+      if (seedPositions.has(nextNumber) && !firstCycle) {
+        const firstPosition = seedPositions.get(nextNumber);
+        firstCycle = {
+          cycleStart: firstPosition,
+          cycleEnd: i
+        };
+      }
+
+      // Almacenar la primera posición de cada semilla para detectar ciclos
+      if (!seedPositions.has(nextNumber)) {
+        seedPositions.set(nextNumber, i);
+      }
 
       // Contar ocurrencias de semillas
       const occurrences = seenNumbers.get(nextNumber) || 0;
@@ -92,24 +112,36 @@ const SquaresMiddle = () => {
 
       currentSeed = nextNumber;
     }
-
-    // Ahora hacemos un segundo recorrido para marcar las filas con números repetidos
-    // DESPUÉS de haber acumulado todos los conteos
-    const finalResults = generatedResults.map((result) => {
+    
+    // Marcar solo el principio y fin del primer ciclo detectado
+    const finalResults = generatedResults.map((result, index) => {
       const randomRepeated = seenRandoms.get(result.randomFixed) > 1;
+      
+      // Verificar si este índice es inicio o fin del primer ciclo
+      let isCycleStart = false;
+      let isCycleEnd = false;
+      
+      if (firstCycle) {
+        if (index === firstCycle.cycleStart) isCycleStart = true;
+        if (index === firstCycle.cycleEnd) isCycleEnd = true;
+      }
       
       return {
         ...result,
         repeated: seenNumbers.get(result.nextSeed) > 1,
         randomRepeated: randomRepeated,
+        isCycleStart: isCycleStart,
+        isCycleEnd: isCycleEnd
       };
     });
 
     console.log('Conteo de números aleatorios:', Object.fromEntries(seenRandoms));
     console.log('Resultados generados:', finalResults);
+    console.log('Primer ciclo detectado:', firstCycle);
 
     setResults(finalResults);
     setIsDegenerative(degenerative);
+    setHasCycles(firstCycle !== null);
   };
 
   // Preparar datos para descarga (solo números en rango 0-1, sin encabezados)
@@ -192,7 +224,24 @@ const SquaresMiddle = () => {
                       </span>
                       <span>{result.squared.slice(result.middleEnd)}</span>
                     </td>
-                    <td>{result.nextSeed}</td>
+                    <td>
+                      {/* Aplicar estilo en negrita y fondo celeste solo para inicio o fin del primer ciclo */}
+                      {result.isCycleStart || result.isCycleEnd ? (
+                        <span 
+                          style={{ 
+                            fontWeight: 'bold', 
+                            backgroundColor: '#d4f1f9',
+                            padding: '2px 5px',
+                            borderRadius: '3px',
+                            display: 'inline-block'
+                          }}
+                        >
+                          {result.nextSeed}
+                        </span>
+                      ) : (
+                        result.nextSeed
+                      )}
+                    </td>
                     <td style={result.randomRepeated ? { backgroundColor: '#fff3cd' } : {}}>
                       {result.randomFixed}
                     </td>
@@ -212,6 +261,13 @@ const SquaresMiddle = () => {
             {/* Indicador de repetición de números aleatorios */}
             <p className="text-center mt-3" style={{ color: '#e74c3c' }}>
               Las filas con fondo amarillo contienen números aleatorios que se repiten en la secuencia.
+            </p>
+
+            {/* Indicador de ciclos */}
+            <p className="text-center mt-3" style={{ color: hasCycles ? '#3498db' : '#2c3e50' }}>
+              {hasCycles
+                ? 'Se detectó un ciclo en la secuencia. Los valores en fondo celeste y negrita marcan el inicio y fin del ciclo.'
+                : 'No se detectaron ciclos en la secuencia.'}
             </p>
 
             {/* Indicador de degeneración */}

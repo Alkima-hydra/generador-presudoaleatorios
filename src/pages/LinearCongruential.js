@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Navbar from '../componentes/navbar';
-import { Container, Row, Col, Form, Button, Table } from 'react-bootstrap';
+import { Container, Row, Col, Form, Button, Table, Badge } from 'react-bootstrap';
 import Swal from 'sweetalert2';
 import { CSVLink } from 'react-csv';
 import * as XLSX from 'xlsx';
@@ -39,6 +39,8 @@ const LinearCongruential = () => {
   const [count, setCount] = useState(''); // Cantidad de números a generar
   const [results, setResults] = useState([]);
   const [isDegenerative, setIsDegenerative] = useState(false);
+  const [currentPeriod, setCurrentPeriod] = useState(0);
+  const [hasCycle, setHasCycle] = useState(false);
 
   const generateLinearCongruential = () => {
     const seedNum = parseInt(seed);
@@ -94,48 +96,72 @@ const LinearCongruential = () => {
 
     let currentSeed = seedNum;
     const generatedResults = [];
-    const seenNumbers = new Map();
+    const seenSeeds = new Map();
     const seenRandoms = new Map();
     let degenerative = false;
+    let cycleDetected = false;
+    let periodLength = 0;
+    let cycleStartIndex = -1;
 
     for (let i = 0; i < countNum; i++) {
       const nextSeed = (multiplierNum * currentSeed + incrementNum) % modulusNum;
       const randomNumber = nextSeed / modulusNum;
       const randomFixed = randomNumber.toFixed(4);
 
+      // Almacenar el índice en el que aparece cada semilla y número aleatorio
+      if (seenSeeds.has(nextSeed)) {
+        if (!cycleDetected) {
+          cycleDetected = true;
+          cycleStartIndex = seenSeeds.get(nextSeed);
+          periodLength = i + 1 - cycleStartIndex;
+        }
+        degenerative = true;
+      } else {
+        seenSeeds.set(nextSeed, i);
+      }
+
+      // Almacenar el índice en el que aparece cada número aleatorio
+      if (!seenRandoms.has(randomFixed)) {
+        seenRandoms.set(randomFixed, i);
+      }
+
       generatedResults.push({
+        index: i,
         seed: currentSeed,
         nextSeed: nextSeed,
         random: randomNumber,
         randomFixed: randomFixed,
       });
 
-      const occurrences = seenNumbers.get(nextSeed) || 0;
-      seenNumbers.set(nextSeed, occurrences + 1);
-      seenRandoms.set(randomFixed, (seenRandoms.get(randomFixed) || 0) + 1);
-
-      if (occurrences > 0) {
-        degenerative = true;
-      }
-
       currentSeed = nextSeed;
     }
 
-    const finalResults = generatedResults.map((result) => {
-      const randomRepeated = seenRandoms.get(result.randomFixed) > 1;
+    // Marcar semillas y números aleatorios repetidos
+    const finalResults = generatedResults.map((result, idx) => {
+      const seedRepeated = seenSeeds.get(result.nextSeed) !== idx;
+      const randomRepeated = [...seenRandoms.entries()]
+        .filter(([rand, index]) => rand === result.randomFixed && index !== idx)
+        .length > 0;
+      
+      // Determinar si este elemento está dentro del ciclo detectado
+      const inCycle = cycleDetected && idx >= cycleStartIndex;
 
       return {
         ...result,
-        repeated: seenNumbers.get(result.nextSeed) > 1,
-        randomRepeated: randomRepeated,
+        seedRepeated,
+        randomRepeated,
+        inCycle,
       };
     });
 
     console.log('Conteo de números aleatorios:', Object.fromEntries(seenRandoms));
+    console.log('Período detectado:', periodLength);
     console.log('Resultados generados:', finalResults);
 
     setResults(finalResults);
     setIsDegenerative(degenerative);
+    setCurrentPeriod(periodLength);
+    setHasCycle(cycleDetected);
   };
 
   const calculateMaxPeriod = () => {
@@ -177,29 +203,44 @@ const LinearCongruential = () => {
     const divisibleByPrimes = factors.every((factor) => aMinus1 % factor === 0);
     const divisibleBy4IfM4 = modulusNum % 4 === 0 ? aMinus1 % 4 === 0 : true;
 
+    // Calcular el período máximo teórico
+    let theoreticalMaxPeriod = modulusNum;
+    if (incrementNum === 0) {
+      // Para generadores multiplicativos (c=0)
+      theoreticalMaxPeriod = modulusNum - 1;
+    }
+
     if (isCoprime && divisibleByPrimes && divisibleBy4IfM4) {
       Swal.fire({
         icon: 'info',
-        title: 'Período Máximo',
-        text: `El período máximo teórico es ${modulusNum}. Los parámetros actuales ya cumplen las condiciones de Hull-Dobell.`,
+        title: 'Análisis de Período',
+        html: `
+          <b>Período Máximo Teórico:</b> ${theoreticalMaxPeriod}<br>
+          <b>Período Actual:</b> ${currentPeriod > 0 ? currentPeriod : "No determinado"}<br><br>
+          Los parámetros actuales ya cumplen las condiciones de Hull-Dobell.
+        `,
       });
       return;
     }
 
     // Sugerir nuevos parámetros
-    const suggestedMultiplier = 5; // Ejemplo simple que suele funcionar bien
+    const suggestedMultiplier = modulusNum % 4 === 0 ? 5 : 3;
     const suggestedIncrement = 1; // Coprimo con la mayoría de los módulos
     const suggestedModulus = modulusNum % 2 === 0 ? modulusNum : modulusNum + 1; // Asegurar que sea par para simplificar
 
     Swal.fire({
       icon: 'warning',
-      title: 'Período Máximo Teórico',
-      html: `Los parámetros actuales no garantizan el período máximo (${modulusNum}):<br>
-        - MCD(c, m) = 1: ${isCoprime ? 'Sí' : 'No'}<br>
-        - (a-1) divisible por factores primos de m: ${divisibleByPrimes ? 'Sí' : 'No'}<br>
-        - Si m divisible por 4, (a-1) también: ${divisibleBy4IfM4 ? 'Sí' : 'No'}<br><br>
-        Sugerimos: <b>a = ${suggestedMultiplier}, c = ${suggestedIncrement}, m = ${suggestedModulus}</b><br>
-        ¿Desea aplicar estos cambios?`,
+      title: 'Análisis de Período',
+      html: `
+        <b>Período Máximo Teórico:</b> ${theoreticalMaxPeriod}<br>
+        <b>Período Actual:</b> ${currentPeriod > 0 ? currentPeriod : "No determinado"}<br><br>
+        Los parámetros actuales no garantizan el período máximo:<br>
+        - MCD(c, m) = 1: ${isCoprime ? 'Sí ✓' : 'No ✗'}<br>
+        - (a-1) divisible por factores primos de m: ${divisibleByPrimes ? 'Sí ✓' : 'No ✗'}<br>
+        - Si m divisible por 4, (a-1) también: ${divisibleBy4IfM4 ? 'Sí ✓' : 'No ✗'}<br><br>
+        Parámetros sugeridos: <b>a = ${suggestedMultiplier}, c = ${suggestedIncrement}, m = ${suggestedModulus}</b><br>
+        ¿Desea aplicar estos cambios?
+      `,
       showCancelButton: true,
       confirmButtonText: 'Sí, aplicar cambios',
       cancelButtonText: 'No, mantener actuales',
@@ -217,7 +258,7 @@ const LinearCongruential = () => {
     });
   };
 
-  const csvData = results.map((result) => [result.random]);
+  const csvData = results.map((result) => [result.randomFixed]);
 
   const downloadExcel = () => {
     const ws = XLSX.utils.aoa_to_sheet(csvData);
@@ -310,6 +351,26 @@ const LinearCongruential = () => {
           </Col>
         </Row>
 
+        {/* Información del período y ciclo */}
+        {results.length > 0 && (
+          <Row className="justify-content-center mb-4">
+            <Col md={8} className="text-center">
+              <div className="p-3" style={{ backgroundColor: '#f8f9fa', borderRadius: '5px' }}>
+                <h5>Información de la Secuencia</h5>
+                <Badge bg={isDegenerative ? "warning" : "success"} className="me-2">
+                  {isDegenerative ? 'Secuencia Degenerativa' : 'Secuencia No Degenerativa'}
+                </Badge>
+                <Badge bg={hasCycle ? "info" : "secondary"} className="me-2">
+                  {hasCycle ? 'Ciclo Detectado' : 'Sin Ciclo Detectado'}
+                </Badge>
+                <Badge bg="primary">
+                  Período Actual: {currentPeriod > 0 ? currentPeriod : "No determinado"}
+                </Badge>
+              </div>
+            </Col>
+          </Row>
+        )}
+
         {/* Tabla de resultados */}
         {results.length > 0 && (
           <>
@@ -322,6 +383,7 @@ const LinearCongruential = () => {
             >
               <thead>
                 <tr>
+                  <th>#</th>
                   <th>Semilla (Xₙ)</th>
                   <th>Nueva Semilla (Xₙ₊₁)</th>
                   <th>Número (0-1)</th>
@@ -331,11 +393,19 @@ const LinearCongruential = () => {
                 {results.map((result, index) => (
                   <tr
                     key={index}
-                    className={result.randomRepeated ? 'repeated-random' : ''}
-                    style={result.randomRepeated ? { backgroundColor: '#ffeecc' } : {}}
+                    style={
+                      result.inCycle
+                        ? { backgroundColor: '#e2f0d9' } // Verde claro para elementos del ciclo
+                        : result.randomRepeated
+                        ? { backgroundColor: '#ffeecc' } // Amarillo para números aleatorios repetidos
+                        : {}
+                    }
                   >
+                    <td>{result.index}</td>
                     <td>{result.seed}</td>
-                    <td>{result.nextSeed}</td>
+                    <td style={result.seedRepeated ? { backgroundColor: '#ffd7d7' } : {}}>
+                      {result.nextSeed}
+                    </td>
                     <td style={result.randomRepeated ? { backgroundColor: '#fff3cd' } : {}}>
                       {result.randomFixed}
                     </td>
@@ -344,30 +414,33 @@ const LinearCongruential = () => {
               </tbody>
             </Table>
 
-            <style>
-              {`
-                .repeated-random {
-                  background-color: #ffeecc !important;
-                }
-              `}
-            </style>
-
-            <p className="text-center mt-3" style={{ color: '#e74c3c' }}>
-              Las filas con fondo amarillo contienen números aleatorios que se repiten en la secuencia.
-            </p>
-
-            <p className="text-center mt-3" style={{ color: isDegenerative ? '#e74c3c' : '#2c3e50' }}>
-              {isDegenerative
-                ? 'La secuencia es degenerativa (se detectó repetición de semillas).'
-                : 'La secuencia no es degenerativa.'}
-            </p>
+            <div className="mt-3 p-3" style={{ backgroundColor: '#f8f9fa', borderRadius: '5px' }}>
+              <h5 className="text-center mb-3">Leyenda</h5>
+              <Row>
+                <Col md={4}>
+                  <div style={{ backgroundColor: '#fff3cd', padding: '5px', marginBottom: '5px', borderRadius: '3px' }}>
+                    Números aleatorios repetidos
+                  </div>
+                </Col>
+                <Col md={4}>
+                  <div style={{ backgroundColor: '#ffd7d7', padding: '5px', marginBottom: '5px', borderRadius: '3px' }}>
+                    Semillas repetidas
+                  </div>
+                </Col>
+                <Col md={4}>
+                  <div style={{ backgroundColor: '#e2f0d9', padding: '5px', marginBottom: '5px', borderRadius: '3px' }}>
+                    Elementos dentro del ciclo
+                  </div>
+                </Col>
+              </Row>
+            </div>
 
             <Row className="justify-content-center mt-4">
               <Col xs="auto">
                 <CSVLink
                   data={csvData}
                   filename="numeros_congruencial_lineal.csv"
-                  className="btn btn-outline-primary mr-2"
+                  className="btn btn-outline-primary me-2"
                 >
                   Descargar CSV
                 </CSVLink>
